@@ -11,7 +11,7 @@
 
 /***************************************************
   Game Frame V2 Source Code
-  Jeremy Williams, 2-16-2016
+  Jeremy Williams, 2-26-2016
 
   Game Frame is available at LEDSEQ.COM
 
@@ -21,7 +21,8 @@
   1.8" SPI display library by Adafruit.
   http://www.adafruit.com/products/358
 
-  In the SD card, place 24 bit color BMP files (be sure they are 24-bit!)
+  In the SD card, place 24 or 32 bit color BMP files
+  (Alpha channel is ignored in 32-bit files.)
 
   There are examples included
  ****************************************************/
@@ -30,7 +31,7 @@
 SdFat sd; // set filesystem
 SdFile myFile; // set filesystem
 
-#define BUFFPIXEL 1 // number of pixels to buffer when reading BMP files
+#define BUFFPIXEL 16 // number of pixels to buffer when reading BMP files
 
 // Time
 tmElements_t tm;
@@ -1518,11 +1519,11 @@ void refreshImageDimensions(char *filename) {
 void bmpDraw(char *filename, uint8_t x, uint8_t y) {
 
   int  bmpWidth, bmpHeight;   // W+H in pixels
-  uint8_t  bmpDepth;              // Bit depth (currently must be 24)
-  uint32_t bmpImageoffset;        // Start of image data in file
-  uint32_t  rowSize;               // Not always = bmpWidth; may have padding
+  uint8_t  bmpDepth;              // Bit depth (currently must be 24 or 32)
   uint8_t  sdbuffer[3 * BUFFPIXEL]; // pixel buffer (R+G+B per pixel)
   uint8_t  buffidx = sizeof(sdbuffer); // Current position in sdbuffer
+  uint32_t bmpImageoffset;        // Start of image data in file
+  uint32_t  rowSize;               // Not always = bmpWidth; may have padding
   boolean  goodBmp = false;       // Set to true on valid header parse
   boolean  flip    = true;        // BMP is stored bottom-to-top
   int  w, h, row, col;
@@ -1568,8 +1569,7 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
     if (read16(myFile) == 1) { // # planes -- must be '1'
       bmpDepth = read16(myFile); // bits per pixel
       //      Serial.print(F("Bit Depth: ")); Serial.println(bmpDepth);
-      if ((bmpDepth == 24) && (read32(myFile) == 0)) { // 0 = uncompressed
-
+      if ((bmpDepth == 24 || bmpDepth == 32) && (read32(myFile) == 0)) { // 0 = uncompressed
         goodBmp = true; // Supported BMP format -- proceed!
         if (debugMode)
         {
@@ -1586,7 +1586,7 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
         }
 
         // BMP rows are padded (if needed) to 4-byte boundary
-        rowSize = (bmpWidth * 3 + 3) & ~3;
+        rowSize = (bmpWidth * bmpDepth/8 + bmpDepth/8) & ~(bmpDepth/8); // 32-bit BMP support
         //        Serial.print(F("Row size: "));
         //        Serial.println(rowSize);
 
@@ -1626,9 +1626,21 @@ void bmpDraw(char *filename, uint8_t x, uint8_t y) {
 
           for (col = 0; col < w; col++) { // For each pixel...
             // Time to read more pixel data?
-            if (buffidx >= sizeof(sdbuffer)) { // Indeed
-              myFile.read(sdbuffer, sizeof(sdbuffer));
-              buffidx = 0; // Set index to beginning
+            
+            if (bmpDepth == 24)
+            {
+              if (buffidx >= sizeof(sdbuffer)) { // Indeed
+                myFile.read(sdbuffer, sizeof(sdbuffer));
+                buffidx = 0; // Set index to beginning
+              }
+            }
+            else if (bmpDepth == 32)
+            {
+              if (buffidx >= 3) { // 32-bit file compatibility forces buffer to 1 pixel at a time
+                myFile.read(sdbuffer, 3); 
+                myFile.read(); // eat the alpha channel
+                buffidx = 0; // Set index to beginning
+              }
             }
 
             // push to LED buffer
