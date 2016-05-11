@@ -11,7 +11,7 @@
 
 /***************************************************
   Game Frame V2 Source Code
-  Jeremy Williams, 2-26-2016
+  Jeremy Williams, 5-7-2016
 
   Game Frame is available at LEDSEQ.COM
 
@@ -48,7 +48,7 @@ boolean understood = false;
 #define DATA_PIN 2
 #define CLOCK_PIN 3
 #define NUM_LEDS    256
-#define LED_TYPE    APA102
+#define LED_TYPE    SK9822
 #define COLOR_ORDER BGR
 CRGB leds[NUM_LEDS];
 
