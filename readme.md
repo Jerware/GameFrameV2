@@ -1,7 +1,7 @@
 Game Frame Source
 =========
 This source code is for use with Game Frame, a pixel display available from LEDSEQ.COM.
-It compiles for Teensy 3.x and Teensy LC under Arduino 1.6.3, and requires the following libraries.
+It compiles for Teensy 3.x and Teensy LC under Arduino 1.6.3 and [Teensyduino 1.22](https://www.pjrc.com/teensy/td_122/), and requires the following libraries.
 
 Most libraries are available for download here:
 https://www.pjrc.com/teensy/td_libs.html
