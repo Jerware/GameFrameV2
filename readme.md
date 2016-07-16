@@ -14,5 +14,5 @@ DS1307RTC
 FastLED
 Entropy
 IRremote
-SdFat (https://github.com/greiman/SdFat-beta)
+[SdFat](https://github.com/greiman/SdFat-beta)
 IniFileLite (available in this repository)
