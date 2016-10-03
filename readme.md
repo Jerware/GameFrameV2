@@ -6,13 +6,13 @@ It compiles for Teensy 3.x and Teensy LC under Arduino 1.6.3 and [Teensyduino 1.
 Most libraries are available for download here:
 https://www.pjrc.com/teensy/td_libs.html
 
-SPI
-EEPROM
-Wire
-Time
-DS1307RTC
-FastLED
-Entropy
-IRremote
-[SdFat](https://github.com/greiman/SdFat-beta)
-IniFileLite (available in this repository)
+* SPI
+* EEPROM
+* Wire
+* Time
+* DS1307RTC
+* FastLED
+* Entropy
+* IRremote
+* [SdFat](https://github.com/greiman/SdFat-beta)
+* IniFileLite (available in this repository)
