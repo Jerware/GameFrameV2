@@ -11,7 +11,7 @@
 
 /***************************************************
   Game Frame V2 Source Code
-  Jeremy Williams, 5-7-2016
+  Jeremy Williams, 2-26-2016
 
   Game Frame is available at LEDSEQ.COM
 
@@ -136,6 +136,7 @@ imageHeight = 0,
 ballAngle;
 
 unsigned long
+prevRemoteMillis = 0, // last time a valid remote code was received
 colorCorrection = 0xFFFFFF, // color correction setting
 colorTemperature = 0xFFFFFF, // color Temperature
 remoteCodeMenu = 0,
@@ -318,24 +319,24 @@ void initGameFrame()
     {
       myFile.open(sd.vwd(), fileIndex, O_READ);
       if (myFile.isDir()) {
-        Serial.println(F("---"));
+        Serial.println("---");
         if (displayFolderCount == true)
         {
           leds[numFolders] = CRGB(128, 255, 0);
           FastLED.show();
         }
         numFolders++;
-        Serial.print(F("File Index: "));
+        Serial.print("File Index: ");
         Serial.println(fileIndex);
         myFile.getName(folder, 13);
-        Serial.print(F("Folder: "));
+        Serial.print("Folder: ");
         Serial.println(folder);
         closeMyFile();
       }
       else closeMyFile();
     }
     Serial.print(numFolders);
-    Serial.println(F(" folders found."));
+    Serial.println(" folders found.");
   }
   if (displayFolderCount == true)
   {
@@ -394,26 +395,31 @@ void remoteTest()
   sd.chdir("/00system");
   int graphicShown = 0;
   bmpDraw("irZapr.bmp", 0, 0);
+  long nextIRCheck = 0;
   while (true)
   {
-    delay(125); // IR remote only sends signals about once every 125ms
     irReceiver();
-    if (irCommand == 'P' || irPowerRepeat && graphicShown != 1)
+    if (irCommand == 'P' || irCommand == 'M' || irCommand == 'N' || irPowerRepeat || irMenuRepeat || irNextRepeat)
     {
-      bmpDraw("irPowr.bmp", 0, 0);
-      graphicShown = 1;
+      nextIRCheck = millis() + 125;
+      if (irCommand == 'P' || irPowerRepeat && graphicShown != 1)
+      {
+        bmpDraw("irPowr.bmp", 0, 0);
+        graphicShown = 1;
+      }
+      else if (irCommand == 'M' || irMenuRepeat && graphicShown != 2)
+      {
+        bmpDraw("irMenu.bmp", 0, 0);
+        graphicShown = 2;
+      }
+      else if (irCommand == 'N' || irNextRepeat && graphicShown != 3)
+      {
+        bmpDraw("irNext.bmp", 0, 0);
+        graphicShown = 3;
+      }
     }
-    else if (irCommand == 'M' || irMenuRepeat && graphicShown != 2)
-    {
-      bmpDraw("irMenu.bmp", 0, 0);
-      graphicShown = 2;
-    }
-    else if (irCommand == 'N' || irNextRepeat && graphicShown != 3)
-    {
-      bmpDraw("irNext.bmp", 0, 0);
-      graphicShown = 3;
-    }
-    else if (irCommand == 'Z' && graphicShown != 0)
+    // no remote button pressed
+    if (millis() > nextIRCheck && graphicShown != 0)
     {
       bmpDraw("irZapr.bmp", 0, 0);
       graphicShown = 0;
@@ -425,7 +431,10 @@ void remoteTest()
       bmpDraw("irZapr.bmp", 0, 0);
     }
     // exit if MENU tactile button is presssed
-    if (digitalRead(buttonMenuPin) == LOW) return;
+    if (digitalRead(buttonMenuPin) == LOW)
+    {
+      return;
+    }
   }
 }
 
@@ -460,6 +469,12 @@ void redBox()
   FastLED.show();
 }
 
+void printIRCode()
+{
+  Serial.print("IR code: ");
+  Serial.println(results.value, DEC);
+}
+
 void recordIRCodes()
 {
   remoteCodeMenu = 0;
@@ -472,10 +487,9 @@ void recordIRCodes()
   while (remoteCodePower == 0)
   {
     if (irrecv.decode(&results)) {
-      if (results.value != 4294967295) // ignore repeat code (0xFFFFFFFF)
+      if (results.decode_type == NEC && results.value != 4294967295) // ignore repeat code (0xFFFFFFFF)
       {
-        Serial.print("IR code: ");
-        Serial.println(results.value, DEC);
+        printIRCode();
         remoteCodePower = results.value;
       }
       irrecv.resume(); // Receive the next value
@@ -488,10 +502,9 @@ void recordIRCodes()
   while (remoteCodeMenu == 0)
   {
     if (irrecv.decode(&results)) {
-      if (results.value != 4294967295 && results.value != remoteCodePower) // ignore repeat code (0xFFFFFFFF)
+      if (results.decode_type == NEC && results.value != 4294967295 && results.value != remoteCodePower) // ignore repeat code (0xFFFFFFFF)
       {
-        Serial.print("IR code: ");
-        Serial.println(results.value, DEC);
+        printIRCode();
         remoteCodeMenu = results.value;
       }
       irrecv.resume(); // Receive the next value
@@ -504,10 +517,9 @@ void recordIRCodes()
   while (remoteCodeNext == 0)
   {
     if (irrecv.decode(&results)) {
-      if (results.value != 4294967295 && results.value != remoteCodePower && results.value != remoteCodeMenu) // ignore repeat code (0xFFFFFFFF)
+      if (results.decode_type == NEC && results.value != 4294967295 && results.value != remoteCodePower && results.value != remoteCodeMenu) // ignore repeat code (0xFFFFFFFF)
       {
-        Serial.print("IR code: ");
-        Serial.println(results.value, DEC);
+        printIRCode();
         remoteCodeNext = results.value;
       }
       irrecv.resume(); // Receive the next value
@@ -631,8 +643,7 @@ void sdErrorMessage()
 void printRemoteCode()
 {
   if (irrecv.decode(&results)) {
-    Serial.print("IR code: ");
-    Serial.println(results.value, DEC);
+    printIRCode();
     irrecv.resume(); // Receive the next value
   }
 }
@@ -700,7 +711,7 @@ time_t getTeensy3Time()
 /*  code to process time sync messages from the serial port   */
 #define TIME_HEADER  "T"   // Header tag for serial time sync message
 
-unsigned long processSyncMessage() {
+  unsigned long processSyncMessage() {
   unsigned long pctime = 0L;
   const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
 
@@ -717,22 +728,10 @@ unsigned long processSyncMessage() {
 void saveSettingsToEEPROM()
 {
   // save any new settings to EEPROM
-  if (EEPROM.read(0) != brightness)
-  {
-    EEPROM.write(0, brightness);
-  }
-  if (EEPROM.read(1) != playMode)
-  {
-    EEPROM.write(1, playMode);
-  }
-  if (EEPROM.read(2) != cycleTimeSetting)
-  {
-    EEPROM.write(2, cycleTimeSetting);
-  }
-  if (EEPROM.read(3) != displayMode)
-  {
-    EEPROM.write(3, displayMode);
-  }
+  EEPROM.update(0, brightness);
+  EEPROM.update(1, playMode);
+  EEPROM.update(2, cycleTimeSetting);
+  EEPROM.update(3, displayMode);
 }
 
 void irReceiver()
@@ -746,15 +745,28 @@ void irReceiver()
     Serial.println(results.value);
     understood = true;
     // menu
-    if (results.value == remoteCodeMenu) irCommand = 'M';
+    if (results.value == remoteCodeMenu)
+    {
+      irCommand = 'M';
+      prevRemoteMillis = millis();
+    }
     // next
-    else if (results.value == remoteCodeNext) irCommand = 'N';
+    else if (results.value == remoteCodeNext)
+    {
+      irCommand = 'N';
+      prevRemoteMillis = millis();
+    }
     // power
-    else if (results.value == remoteCodePower) irCommand = 'P';
+    else if (results.value == remoteCodePower)
+    {
+      irCommand = 'P';
+      prevRemoteMillis = millis();
+    }
     // repeat/held
-    else if (results.value == 4294967295)
+    else if (results.value == 4294967295 && millis() - prevRemoteMillis < 250) // require recent prime signal to assume repeat 
     {
       irCommand = 'R';
+      prevRemoteMillis = millis();
       if (irLastCommand == 'M') irMenuRepeat = true;
       else if (irLastCommand == 'N') irNextRepeat = true;
       else if (irLastCommand == 'P') irPowerRepeat = true;
@@ -1483,7 +1495,6 @@ void refreshImageDimensions(char *filename) {
   }
 
   // storing dimentions for image
-
   // Open requested file on SD card
   if (!myFile.open(filename, O_READ)) {
     Serial.println(F("File open failed"));
@@ -1840,8 +1851,7 @@ void initClock()
     // 24 hour conversion
     if (hour12 && currentHour > 12) currentHour -= 12;
     if (hour12 && currentHour == 0) currentHour = 12;
-    drawDigits();
-    FastLED.show();
+    drawDigitsAndShow();
   }
 }
 
@@ -1859,24 +1869,39 @@ void setClock()
   if (currentHour == 0 && currentMinute == 0) clockAdjustState = true;
 }
 
+void drawDigitsAndShow()
+{
+  drawDigits();
+  FastLED.show();
+  debugClockDisplay();
+}
+
 void setClockHour()
 {
   // set hour
+  long lastButtonCheck = 0;
+  long lastDigitFlash = 0;
   while (clockDigitSet == false)
   {
-    drawDigits();
-    FastLED.show();
-    debugClockDisplay();
     buttonDebounce();
     irReceiver();
-    delay(30);
 
     // menu button
-    if ((digitalRead(buttonMenuPin) == LOW || irCommand == 'M' || irMenuRepeat == true) && buttonPressed == false && buttonEnabled == true && clockSetBlink)
+    if ((digitalRead(buttonMenuPin) == LOW || irCommand == 'M' || irMenuRepeat == true) && buttonPressed == false && buttonEnabled == true && millis() - lastButtonCheck > 100)
     {
+      clockSetBlink = true;
       currentHour++;
-
       if (currentHour > 23) currentHour = 0;
+      lastButtonCheck = millis();
+      lastDigitFlash = millis();
+      drawDigitsAndShow();
+    }
+
+    // flash digit
+    if (millis() - lastDigitFlash > 250)
+    {
+      lastDigitFlash = millis();
+      drawDigitsAndShow();
     }
 
     // next button
@@ -1891,20 +1916,28 @@ void setClockHour()
 void setClockMinute()
 {
   // set minutes
+  long lastButtonCheck = 0;
+  long lastDigitFlash = 0;
   while (clockDigitSet == true)
   {
-    drawDigits();
-    FastLED.show();
-    debugClockDisplay();
     buttonDebounce();
     irReceiver();
-    delay(30);
-
     // menu button
-    if ((digitalRead(buttonMenuPin) == LOW  || irCommand == 'M' || irMenuRepeat == true) && buttonPressed == false && buttonEnabled == true && clockSetBlink)
+    if ((digitalRead(buttonMenuPin) == LOW  || irCommand == 'M' || irMenuRepeat == true) && buttonPressed == false && buttonEnabled == true && millis() - lastButtonCheck > 100)
     {
+      clockSetBlink = true;
       currentMinute++;
       if (currentMinute > 59) currentMinute = 0;
+      lastButtonCheck = millis();
+      lastDigitFlash = millis();
+      drawDigitsAndShow();
+    }
+
+    // flash digit
+    if (millis() - lastDigitFlash > 250)
+    {
+      lastDigitFlash = millis();
+      drawDigitsAndShow();
     }
 
     // next button
@@ -1989,8 +2022,7 @@ void showClock()
     // second hand disabled, so only draw time on new minute
     else if (currentSecond == 0)
     {
-      drawDigits();
-      FastLED.show();
+      drawDigitsAndShow();
     }
 
 //    debugClockDisplay();
@@ -2529,9 +2561,8 @@ void readABC()
   //    }
   //  }
 
-  strcpy_P(entry, PSTR("abc0"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc0", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2548,9 +2579,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc1"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc1", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2567,9 +2597,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc2"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc2", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2586,9 +2615,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc3"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc3", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2605,9 +2633,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc4"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc4", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2624,9 +2651,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc5"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc5", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2643,9 +2669,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc6"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc6", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2662,9 +2687,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc7"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc7", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2681,9 +2705,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc8"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc8", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2700,9 +2723,8 @@ void readABC()
     printErrorMessage(ini.getError());
   }
 
-  strcpy_P(entry, PSTR("abc9"));
   // Fetch a value from a key which is present
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "abc9", buffer, bufferLen)) {
     if (strlen(buffer) > 0)
     {
       int h = atoi(strtok(buffer, ":"));
@@ -2781,12 +2803,10 @@ void readRemoteIni()
   }
   char section[7];
   strcpy_P(section, PSTR("remote"));
-  char entry[6];
-  strcpy_P(entry, PSTR("menu"));
 
   // Fetch a value from a key which is present
   // second hand position offset
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "menu", buffer, bufferLen)) {
     Serial.print(F("IR Menu code: "));
     Serial.println(buffer);
     remoteCodeMenu = strtoull(buffer, NULL, 10);
@@ -2796,11 +2816,9 @@ void readRemoteIni()
     remoteCodeMenu = 2155864095;
   }
 
-  strcpy_P(entry, PSTR("next"));
-
   // Fetch a value from a key which is present
   // clock animation length in seconds
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "next", buffer, bufferLen)) {
     Serial.print(F("IR Next code: "));
     Serial.println(buffer);
     remoteCodeNext = strtoull(buffer, NULL, 10);
@@ -2810,11 +2828,9 @@ void readRemoteIni()
     remoteCodeNext = 2155831455;
   }
 
-  strcpy_P(entry, PSTR("power"));
-
   // Fetch a value from a key which is present
   // daily midnight offset in seconds
-  if (ini.getValue(section, entry, buffer, bufferLen)) {
+  if (ini.getValue(section, "power", buffer, bufferLen)) {
     Serial.print(F("IR Power code: "));
     Serial.println(buffer);
     remoteCodePower = strtoull(buffer, NULL, 10);
@@ -3118,17 +3134,13 @@ float degToRad(float deg)
 
 uint16_t read16(SdFile& f) {
   uint16_t result;
-  ((uint8_t *)&result)[0] = f.read(); // LSB
-  ((uint8_t *)&result)[1] = f.read(); // MSB
+  f.read(&result, 2);
   return result;
 }
 
 uint32_t read32(SdFile& f) {
   uint32_t result;
-  ((uint8_t *)&result)[0] = f.read(); // LSB
-  ((uint8_t *)&result)[1] = f.read();
-  ((uint8_t *)&result)[2] = f.read();
-  ((uint8_t *)&result)[3] = f.read(); // MSB
+  f.read(&result, 4);
   return result;
 }
 
